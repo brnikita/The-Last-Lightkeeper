@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { instantiate } from '../core/AssetLoader.js';
 
 // Сюжетная обвязка: зоны, интерактивы, цели, финал.
 // Полный проход: интро → исследование → 4 линзы + ключ → маяк → финал.
@@ -177,6 +178,32 @@ export class GameScript {
     }
   }
 
+  // Корабль вдали, медленно идущий через пролив; огонёк на мачте.
+  async _spawnShip() {
+    if (this.ship) return;
+    const e = this.e;
+    const ship = await instantiate('/assets/models/env/pirate/ship-small.glb');
+    ship.scale.setScalar(2.2);
+    ship.position.set(150, 0, -130);
+    ship.rotation.y = -2.1;
+    const lamp = new THREE.PointLight(0xffd28a, 3, 25, 1.5);
+    lamp.position.set(0, 5, 0);
+    ship.add(lamp);
+    e.scene.add(ship);
+    this.ship = ship;
+    // дрейф через пролив + покачивание
+    const start = ship.position.clone();
+    const dir = new THREE.Vector3(-1, 0, 0.35).normalize();
+    let t = 0;
+    e.loop.onFrame((dt) => {
+      if (!this.ship) return;
+      t += dt;
+      ship.position.copy(start).addScaledVector(dir, t * 2.2);
+      ship.position.y = Math.sin(t * 0.8) * 0.3;
+      ship.rotation.z = Math.sin(t * 0.6) * 0.04;
+    });
+  }
+
   // Показ иллюстрации катсцены, если файл существует.
   _showStill(name, ms) {
     const url = `/assets/textures/cutscenes/${name}.jpg`;
@@ -224,6 +251,7 @@ export class GameScript {
     e.igniteLighthouse();
     await wait(4200);
 
+    this._spawnShip();
     e.dialogue.say('final_ship');
     await wait(7000);
     e.audio.playSfx('ship_horn', 0.9);
