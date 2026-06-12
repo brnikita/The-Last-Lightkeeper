@@ -40,6 +40,7 @@ export class ThirdPersonCamera {
 
     // castShape сферой от головы к желаемой позиции камеры, игнорируя коллайдер игрока
     let targetDistance = DISTANCE;
+    const ignored = this.physics.cameraIgnored;
     const hit = this.physics.world.castShape(
       this._target,
       { x: 0, y: 0, z: 0, w: 1 },
@@ -51,9 +52,9 @@ export class ThirdPersonCamera {
       undefined, undefined,
       playerCollider ?? undefined,
       undefined,
-      (c) => c !== playerCollider
+      (c) => c !== playerCollider && !(ignored && ignored.has(c.handle))
     );
-    if (hit) targetDistance = Math.max(0.4, hit.time_of_impact);
+    if (hit) targetDistance = Math.max(0.65, hit.time_of_impact);
 
     // приближение мгновенно (чтобы не видеть сквозь стену), отдаление — плавно
     if (targetDistance < this.currentDistance) {

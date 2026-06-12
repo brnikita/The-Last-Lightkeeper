@@ -17,18 +17,32 @@
       transition: opacity 0.8s ease;
     }
     #loading.hidden { opacity: 0; pointer-events: none; }
-    #loading h1 { font-size: 28px; font-weight: normal; letter-spacing: 4px; margin-bottom: 24px; }
-    #loading .bar { width: 240px; height: 2px; background: #2a3242; }
+    #loading h1 { font-size: 30px; font-weight: normal; letter-spacing: 5px; margin-bottom: 10px; }
+    #loading .sub { font-size: 13px; color: #8a93a5; letter-spacing: 2px; margin-bottom: 38px; }
+    #loading .bar { width: 240px; height: 2px; background: #2a3242; visibility: hidden; }
     #loading .bar .fill { height: 100%; width: 0%; background: #e8b96f; transition: width 0.3s ease; }
-    #loading .hint { margin-top: 16px; font-size: 13px; color: #6b7585; }
+    #loading .hint { margin-top: 16px; font-size: 13px; color: #6b7585; min-height: 18px; }
+    #menu-buttons { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+    #menu-buttons button {
+      font-family: inherit; font-size: 16px; letter-spacing: 3px;
+      background: none; border: 1px solid #4a5468; color: #d8cfc0;
+      padding: 12px 44px; cursor: pointer; transition: all 0.25s;
+    }
+    #menu-buttons button:hover { border-color: #e8b96f; color: #e8b96f; }
+    #menu-buttons button.hidden { display: none; }
   </style>
 </head>
 <body>
   <div id="app"></div>
   <div id="loading">
     <h1>ПОСЛЕДНИЙ СМОТРИТЕЛЬ</h1>
+    <div class="sub">THE LAST LIGHTKEEPER</div>
+    <div id="menu-buttons">
+      <button id="btn-continue" class="hidden">ПРОДОЛЖИТЬ</button>
+      <button id="btn-new">НОВАЯ ИГРА</button>
+    </div>
     <div class="bar"><div class="fill" id="loading-fill"></div></div>
-    <div class="hint" id="loading-hint">Загрузка…</div>
+    <div class="hint" id="loading-hint"></div>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>

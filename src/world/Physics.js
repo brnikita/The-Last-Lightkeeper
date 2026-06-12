@@ -10,7 +10,9 @@ export async function initPhysics() {
     initialized = true;
   }
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-  return { RAPIER, world };
+  // тонкие коллайдеры (перила, столбики) — камера их игнорирует
+  const cameraIgnored = new Set();
+  return { RAPIER, world, cameraIgnored };
 }
 
 // Trimesh-коллайдер из THREE.Mesh (для статичного окружения).
