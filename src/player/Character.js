@@ -9,6 +9,9 @@ const CLIP_PATTERNS = {
   idle: [/^idle$/i, /idle/i],
   walk: [/^walking?(_a)?$/i, /walk/i],
   run: [/^running?(_a)?$/i, /run/i, /sprint/i],
+  jump: [/^jump_idle$/i, /jump/i],
+  swim: [/^lie_idle$/i, /swim/i],
+  interact: [/^interact$/i, /^use_item$/i, /^pickup$/i],
 };
 
 function findClip(clips, patterns) {
@@ -75,6 +78,8 @@ export class Character {
       // Фолбэк: если нет walk/run — используем idle, чтобы не было T-позы
       this.actions.walk = this.actions.walk || this.actions.idle;
       this.actions.run = this.actions.run || this.actions.walk;
+      this.actions.jump = this.actions.jump || this.actions.idle;
+      this.actions.swim = this.actions.swim || this.actions.walk;
       if (this.actions.idle) this.play('idle');
       this.loaded = true;
       console.log('[Character] Загружен, клипы:', clips.map((c) => c.name).join(', '));
@@ -106,14 +111,41 @@ export class Character {
     this.current = next;
   }
 
-  update(dt, feetPosition, facing, speed, moving, swimming = false) {
+  // Одноразовая анимация (Interact и т.п.); по окончании возвращается idle.
+  playOnce(name, onDone = null) {
+    const act = this.actions[name];
+    if (!act || !this.mixer) { onDone?.(); return; }
+    this.oneShot = true;
+    act.setLoop(THREE.LoopOnce, 1);
+    act.clampWhenFinished = true;
+    act.reset().fadeIn(0.15).play();
+    if (this.current && this.current !== act) this.current.fadeOut(0.15);
+    this.current = act;
+    const onFin = (e) => {
+      if (e.action !== act) return;
+      this.mixer.removeEventListener('finished', onFin);
+      this.oneShot = false;
+      this.play('idle');
+      onDone?.();
+    };
+    this.mixer.addEventListener('finished', onFin);
+  }
+
+  update(dt, feetPosition, facing, speed, moving, swimming = false, airborne = false) {
     this.root.position.copy(feetPosition);
     this.root.rotation.y = facing;
     if (this.mixer) {
+      if (this.oneShot) {
+        this.mixer.update(dt);
+        return;
+      }
       if (swimming) {
-        // в воде — медленное «барахтанье» на walk-клипе, тело по грудь в воде
-        this.play(moving ? 'walk' : 'idle');
-        if (this.actions.walk) this.actions.walk.timeScale = 0.55;
+        // лежачая поза на поверхности воды + лёгкое покачивание
+        this.play('swim');
+        this._swimT = (this._swimT || 0) + dt;
+        this.root.position.y = -0.22 + Math.sin(this._swimT * 1.8) * 0.05;
+      } else if (airborne) {
+        this.play('jump');
       } else {
         if (this.actions.walk) this.actions.walk.timeScale = 1;
         if (!moving) this.play('idle');

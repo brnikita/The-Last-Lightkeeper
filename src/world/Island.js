@@ -125,11 +125,22 @@ export async function createIsland(scene, physics, terrain) {
   anchors.interactables.market = market;
   const well = await place(`${ENV}/village/building_well_red.gltf`, -6, 14, { scale: 2.2, avoidR: 4 });
   await place(`${ENV}/village/building_windmill_red.gltf`, -34, -16, { rotY: 0.6, scale: V * 1.1, avoidR: 11 });
-  // маркер двери дома деда («Войти»)
-  const dedDoorMarker = new THREE.Group();
-  dedDoorMarker.position.copy(anchors.positions.dedHouseDoor).add(new THREE.Vector3(0, 1, 0));
-  scene.add(dedDoorMarker);
-  anchors.interactables.dedDoor = dedDoorMarker;
+  // маркеры дверей: точка у фасада каждого здания (фасад KayKit — локальный +Z)
+  anchors.doors = {};
+  const addDoorMarker = (id, hx, hz, rotY, r = 3.4) => {
+    const x = hx + r * Math.sin(rotY);
+    const z = hz + r * Math.cos(rotY);
+    const m = new THREE.Group();
+    m.position.set(x, H(x, z) + 1.0, z);
+    scene.add(m);
+    anchors.doors[id] = { marker: m, outside: new THREE.Vector3(x + 1.0 * Math.sin(rotY), H(x, z), z + 1.0 * Math.cos(rotY)) };
+  };
+  addDoorMarker('dedHouse', 10, 12, -2.2);
+  addDoorMarker('homeA', -25, 23, 0.9);
+  addDoorMarker('tavern', -16, 8, 1.7, 4.2);
+  addDoorMarker('market', -2, 24, Math.PI, 3.8);
+  addDoorMarker('windmill', -34, -16, 0.6, 3.2);
+  anchors.positions.dedHouseDoor = anchors.doors.dedHouse.outside;
 
   // рыбный рынок: прилавок, телега, бочки, рыба
   await place(`${ENV}/town/stall.glb`, -4, 30, { rotY: Math.PI, avoidR: 3 });

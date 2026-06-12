@@ -64,6 +64,20 @@ const CSS = `
 }
 #hud .cutscene-img.visible { opacity: 1; }
 #hud .controls-hint { position: absolute; bottom: 18px; left: 22px; color: rgba(240,233,220,0.45); font-size: 12.5px; }
+#hud .end-screen {
+  position: absolute; inset: 0; display: none; flex-direction: column;
+  align-items: center; justify-content: center; pointer-events: auto;
+  background: linear-gradient(rgba(5,7,10,0.25), rgba(5,7,10,0.78));
+}
+#hud .end-screen.visible { display: flex; }
+#hud .end-screen h1 { color: #f0e9dc; font-weight: normal; font-size: 34px; letter-spacing: 8px; text-shadow: 0 2px 18px rgba(0,0,0,0.9); }
+#hud .end-screen .credits { color: rgba(240,233,220,0.75); font-size: 14px; line-height: 1.9; text-align: center; margin-top: 26px; text-shadow: 0 1px 6px rgba(0,0,0,0.9); }
+#hud .end-screen button {
+  margin-top: 38px; font-family: inherit; font-size: 15px; letter-spacing: 3px;
+  background: rgba(8,10,14,0.5); border: 1px solid #e8b96f; color: #e8b96f;
+  padding: 12px 38px; cursor: pointer;
+}
+#hud .end-screen button:hover { background: rgba(232,185,111,0.18); }
 `;
 
 export class HUD {
@@ -84,7 +98,15 @@ export class HUD {
       <div class="lenses"><div class="l"></div><div class="l"></div><div class="l"></div><div class="l"></div></div>
       <div class="note-overlay"><div class="note-paper"><h3></h3><div class="nbody"></div><div class="note-close">E / Esc — закрыть</div></div></div>
       <div class="inv-panel"><div class="inv-box"><h2>КАРМАНЫ ЭЛИ</h2><div class="inv-grid"></div></div></div>
-      <div class="controls-hint">WASD — движение · Shift — бег · E — действие · Tab — инвентарь</div>
+      <div class="controls-hint">WASD — движение · Shift — бег · Space — прыжок · E — действие · Tab — инвентарь</div>
+      <div class="end-screen">
+        <h1>ПОСЛЕДНИЙ СМОТРИТЕЛЬ</h1>
+        <div class="credits">Свет передан. Кто-то знал, что его ждут дома.<br><br>
+          Модели: Kenney · KayKit (CC0) · Небо: Poly Haven (CC0)<br>
+          Музыка: Kevin MacLeod (CC-BY 4.0) · Голоса и звук: ElevenLabs<br>
+          Иллюстрации и текстуры маяка: GPT Image</div>
+        <button class="end-menu-btn">В ГЛАВНОЕ МЕНЮ</button>
+      </div>
     `;
     document.body.appendChild(this.root);
 
@@ -97,6 +119,12 @@ export class HUD {
       if (e.code === 'Tab') { e.preventDefault(); this.toggleInventory(); }
       if ((e.code === 'Escape' || e.code === 'KeyE') && this.noteOpen) this.hideNote();
     });
+    this.$('.end-menu-btn').addEventListener('click', () => location.reload());
+  }
+
+  showEndScreen() {
+    document.exitPointerLock?.();
+    this.$('.end-screen').classList.add('visible');
   }
 
   get modalOpen() { return this.noteOpen || this.invOpen; }
@@ -152,10 +180,16 @@ export class HUD {
 
   fade(dark) { this.$('.fade').classList.toggle('dark', dark); }
 
-  showCutsceneImage(url) {
+  showCutsceneImage(url, instant = false) {
     const el = this.$('.cutscene-img');
     el.style.backgroundImage = `url(${url})`;
-    el.classList.add('visible');
+    if (instant) {
+      el.style.transition = 'none';
+      el.classList.add('visible');
+      requestAnimationFrame(() => { el.style.transition = ''; });
+    } else {
+      el.classList.add('visible');
+    }
   }
   hideCutsceneImage() { this.$('.cutscene-img').classList.remove('visible'); }
 }

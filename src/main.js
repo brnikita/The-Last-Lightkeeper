@@ -21,6 +21,17 @@ const boot = chooseOnce(async (newGame) => {
   menuEl.style.display = 'none';
   barEl.style.visibility = 'visible';
   try {
+    // интро-иллюстрация должна быть готова ДО скрытия лоадера,
+    // иначе на мгновение видна игра
+    if (newGame) {
+      await new Promise((res) => {
+        const img = new Image();
+        img.onload = res;
+        img.onerror = res;
+        img.src = '/assets/textures/cutscenes/intro.jpg';
+        setTimeout(res, 4000);
+      });
+    }
     const engine = new Engine();
     await engine.init(document.getElementById('app'), (p, label) => {
       fillEl.style.width = `${Math.round(p * 100)}%`;

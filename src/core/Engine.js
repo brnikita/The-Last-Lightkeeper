@@ -39,13 +39,12 @@ export class Engine {
     onProgress(0.5, 'Деревня и пристань…');
     this.anchors = await createIsland(this.scene, this.physics, this.terrain);
 
-    const { createDedHouseInterior } = await import('../world/Interior.js');
-    this.interior = await createDedHouseInterior(this.scene, this.physics);
-    this.anchors.interactables.radio = this.interior.radio;
-    this.anchors.interactables.oldLantern = this.interior.lantern;
-    this.anchors.interactables.teaTin = this.interior.tin;
-    this.anchors.interactables.interiorExit = this.interior.doorInside;
-    this.anchors.positions.interiorEntry = this.interior.entryPoint;
+    const { createInteriors } = await import('../world/Interior.js');
+    this.interiors = await createInteriors(this.scene, this.physics);
+    const ded = this.interiors.dedHouse;
+    this.anchors.interactables.radio = ded.radio;
+    this.anchors.interactables.oldLantern = ded.lantern;
+    this.anchors.interactables.teaTin = ded.tin;
 
     onProgress(0.7, 'Маяк…');
     await this._buildLighthouse();
@@ -332,6 +331,7 @@ export class Engine {
     const yaw = this.tpCamera.yaw;
     this._moveInput.x = fx * Math.cos(yaw) + fz * Math.sin(yaw);
     this._moveInput.z = -fx * Math.sin(yaw) + fz * Math.cos(yaw);
+    if (i.consumeJump() && !this.hud.modalOpen) this.player.jump();
     this.player.update(dt, this._moveInput, i.run);
     this.physics.world.step();
 
@@ -356,7 +356,8 @@ export class Engine {
     if (!this.hud.modalOpen) this.tpCamera.applyMouse(m.x, m.y);
 
     this.player.getFeetPosition(this._feet);
-    this.character.update(dt, this._feet, this.player.facing, this.player.speed, this.player.moving, this.player.swimming);
+    const airborne = !this.player.grounded && !this.player.swimming;
+    this.character.update(dt, this._feet, this.player.facing, this.player.speed, this.player.moving, this.player.swimming, airborne);
     this.tpCamera.update(dt, this._feet, this.player.collider);
     // вблизи прячем модель, чтобы камера не оказывалась внутри головы
     this.character.root.visible = this.tpCamera.currentDistance > 1.05;

@@ -2,15 +2,21 @@ import * as THREE from 'three';
 import { instantiate } from '../core/AssetLoader.js';
 
 const INT = '/assets/models/env/interior';
-// Интерьер строится в «кармане» мира, далеко от острова (и выше воды)
-export const INTERIOR_ORIGIN = new THREE.Vector3(300, 3, 0);
 
-// Комната дома деда: пол/стены KayKit Dungeon Remastered + мебель.
-// Возвращает анкеры сюжетных объектов и точку входа.
-export async function createDedHouseInterior(scene, physics) {
+// Интерьеры строятся в «карманах» мира, далеко от острова и выше воды.
+let pocketIndex = 0;
+function nextOrigin() {
+  return new THREE.Vector3(300 + pocketIndex++ * 40, 3, 0);
+}
+
+// Универсальная комната: пол W x D тайлов, стены, мебель по конфигу.
+// furniture: [{ file, x, z, rotY?, y?, scale?, collider? }] — координаты
+// относительно центра комнаты.
+async function createRoom(scene, physics, { tilesW = 3, tilesD = 2, furniture = [], lights = [] }) {
   const { RAPIER, world } = physics;
+  const origin = nextOrigin();
   const g = new THREE.Group();
-  g.position.copy(INTERIOR_ORIGIN);
+  g.position.copy(origin);
   scene.add(g);
 
   const colliderFor = (obj, shrink = 1) => {
@@ -24,8 +30,9 @@ export async function createDedHouseInterior(scene, physics) {
     );
   };
 
-  const put = async (file, x, z, { rotY = 0, y = 0, scale = 1, collider = false } = {}) => {
-    const o = await instantiate(`${INT}/${file}`);
+  const put = async (file, x, z, { rotY = 0, y = 0, scale = 1, collider = false, pack = null } = {}) => {
+    const url = pack ? `/assets/models/env/${pack}/${file}` : `${INT}/${file}`;
+    const o = await instantiate(url);
     o.position.set(x, y, z);
     o.rotation.y = rotY;
     o.scale.setScalar(scale);
@@ -34,33 +41,30 @@ export async function createDedHouseInterior(scene, physics) {
     return o;
   };
 
-  // измеряем тайл пола, чтобы выложить сетку без щелей
+  // тайл пола — замер размера
   const probe = await instantiate(`${INT}/floor_wood_large.gltf.glb`);
   const tile = new THREE.Box3().setFromObject(probe).getSize(new THREE.Vector3());
   const T = Math.max(tile.x, tile.z) || 4;
+  const W = tilesW, D = tilesD;
+  const halfW = (W * T) / 2, halfD = (D * T) / 2;
 
-  // пол 3x2 тайла -> комната ~ (3T x 2T)
-  const W = 3, D = 2;
   for (let i = 0; i < W; i++) {
     for (let j = 0; j < D; j++) {
       await put('floor_wood_large.gltf.glb', (i - (W - 1) / 2) * T, (j - (D - 1) / 2) * T);
     }
   }
-  // сплошной коллайдер пола
   world.createCollider(
-    RAPIER.ColliderDesc.cuboid((W * T) / 2 + 0.5, 0.15, (D * T) / 2 + 0.5)
-      .setTranslation(INTERIOR_ORIGIN.x, INTERIOR_ORIGIN.y - 0.1, INTERIOR_ORIGIN.z)
+    RAPIER.ColliderDesc.cuboid(halfW + 0.5, 0.15, halfD + 0.5)
+      .setTranslation(origin.x, origin.y - 0.1, origin.z)
   );
 
-  // стены по периметру; вход — в южной стене (z+)
-  const halfW = (W * T) / 2, halfD = (D * T) / 2;
+  // стены; вход — по центру южной (z+)
+  const doorCol = Math.floor(W / 2);
   const walls = [];
   for (let i = 0; i < W; i++) {
     const x = (i - (W - 1) / 2) * T;
-    // северная сплошная/с окном
-    walls.push(put(i === 1 ? 'wall_archedwindow_open.gltf.glb' : 'wall.gltf.glb', x, -halfD, { rotY: Math.PI, collider: true }));
-    // южная: в центре дверной проём
-    walls.push(put(i === 1 ? 'wall_doorway.glb' : 'wall.gltf.glb', x, halfD, { rotY: 0, collider: i !== 1 }));
+    walls.push(put(i === doorCol ? 'wall_archedwindow_open.gltf.glb' : 'wall.gltf.glb', x, -halfD, { rotY: Math.PI, collider: true }));
+    walls.push(put(i === doorCol ? 'wall_doorway.glb' : 'wall.gltf.glb', x, halfD, { rotY: 0, collider: i !== doorCol }));
   }
   for (let j = 0; j < D; j++) {
     const z = (j - (D - 1) / 2) * T;
@@ -68,59 +72,139 @@ export async function createDedHouseInterior(scene, physics) {
     walls.push(put('wall.gltf.glb', halfW, z, { rotY: -Math.PI / 2, collider: true }));
   }
   await Promise.all(walls);
-  // дверной проём: боковые косяки-коллайдеры
-  world.createCollider(RAPIER.ColliderDesc.cuboid(T / 2 - 0.8, 1.6, 0.3)
-    .setTranslation(INTERIOR_ORIGIN.x - T / 2 - 0.5, INTERIOR_ORIGIN.y + 1.6, INTERIOR_ORIGIN.z + halfD));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(T / 2 - 0.8, 1.6, 0.3)
-    .setTranslation(INTERIOR_ORIGIN.x + T / 2 + 0.5, INTERIOR_ORIGIN.y + 1.6, INTERIOR_ORIGIN.z + halfD));
+  // косяки дверного проёма
+  const doorX = (doorCol - (W - 1) / 2) * T;
+  for (const side of [-1, 1]) {
+    world.createCollider(RAPIER.ColliderDesc.cuboid((W * T - T) / 4 + 0.6, 1.8, 0.3)
+      .setTranslation(origin.x + doorX + side * (T / 2 + (W * T - T) / 4), origin.y + 1.8, origin.z + halfD));
+  }
+  // сам проём закрыт невидимой стеной: выйти можно только через E
+  // (иначе игрок выпадает из «кармана» в море)
+  world.createCollider(RAPIER.ColliderDesc.cuboid(1.6, 2.0, 0.12)
+    .setTranslation(origin.x + doorX, origin.y + 2.0, origin.z + halfD + 0.35));
 
-  // ---------- мебель ----------
-  await put('bed_decorated.gltf.glb', -halfW + 1.5, -halfD + 1.4, { rotY: Math.PI / 2, collider: true });
-  const table = await put('table_medium_decorated_A.gltf.glb', halfW - 2.2, -halfD + 1.3, { collider: true });
-  await put('chair.gltf.glb', halfW - 3.6, -halfD + 1.5, { rotY: 1.2 });
-  const shelf = await put('shelf_large.gltf.glb', 0, -halfD + 0.45, { rotY: 0, collider: true });
-  await put('shelf_small_candles.gltf.glb', halfW - 0.45, 0.0, { rotY: -Math.PI / 2 });
-  await put('barrel_small.gltf.glb', -halfW + 0.8, halfD - 1, {});
-  await put('crates_stacked.gltf.glb', halfW - 1, halfD - 1.1, { rotY: 0.4, collider: true });
-  await put('stool.gltf.glb', -1.3, 0.6, { rotY: 0.8 });
-  const candle = await put('candle_triple.gltf.glb', halfW - 2.2, -halfD + 1.3, { y: 1.05 });
-  await put('candle_lit.gltf.glb', 0.1, -halfD + 0.5, { y: 1.55 });
-
-  // тёплый свет свечей
-  const warm = new THREE.PointLight(0xffb45e, 1.5, 12, 1.6);
-  warm.position.set(INTERIOR_ORIGIN.x + halfW - 2.2, INTERIOR_ORIGIN.y + 1.8, INTERIOR_ORIGIN.z - halfD + 1.6);
-  scene.add(warm);
-  const warm2 = new THREE.PointLight(0xffc887, 0.9, 10, 1.6);
-  warm2.position.set(INTERIOR_ORIGIN.x, INTERIOR_ORIGIN.y + 2.0, INTERIOR_ORIGIN.z);
-  scene.add(warm2);
-
-  // ---------- сюжетные объекты ----------
-  // радио — на столе
-  const radio = await instantiate('/assets/models/env/survival/box.glb');
-  radio.scale.setScalar(0.45);
-  radio.position.set(halfW - 2.0, 1.05, -halfD + 1.0);
-  g.add(radio);
-  // дедушкин фонарь — у кровати
-  const lantern = await instantiate('/assets/models/env/town/lantern.glb');
-  lantern.scale.setScalar(0.32);
-  lantern.position.set(-halfW + 2.6, 0, -halfD + 0.9);
-  g.add(lantern);
-  // жестянка с ключом — на полке
-  const tin = await instantiate('/assets/models/env/pirate/chest.glb');
-  tin.scale.setScalar(0.4);
-  tin.position.set(0.5, 1.05, -halfD + 0.45);
-  g.add(tin);
-
-  // точки входа/выхода (внутри, перед дверью)
-  const entryPoint = INTERIOR_ORIGIN.clone().add(new THREE.Vector3(0, 1.1, halfD - 1.6));
-  const doorInside = new THREE.Object3D();
-  doorInside.position.set(0, 1, halfD - 0.3);
-  g.add(doorInside);
+  for (const f of furniture) {
+    await put(f.file, f.x, f.z, f);
+  }
+  for (const l of lights) {
+    const pl = new THREE.PointLight(l.color ?? 0xffb45e, l.intensity ?? 1.3, l.dist ?? 12, 1.6);
+    pl.position.set(origin.x + l.x, origin.y + (l.y ?? 1.9), origin.z + l.z);
+    scene.add(pl);
+  }
 
   return {
     group: g,
-    radio, lantern, tin,
-    entryPoint, doorInside,
-    bounds: { halfW, halfD },
+    origin,
+    bounds: { halfW, halfD, T },
+    entryPoint: origin.clone().add(new THREE.Vector3(doorX, 1.1, halfD - 1.6)),
+    doorInside: (() => {
+      const d = new THREE.Object3D();
+      d.position.set(doorX, 1, halfD - 0.3);
+      g.add(d);
+      return d;
+    })(),
+    put, // для дополнительной сюжетной начинки
   };
+}
+
+// ---------- интерьеры всех зданий ----------
+export async function createInteriors(scene, physics) {
+  const rooms = {};
+
+  // Дом деда: кровать, стол с радио, полка с жестянкой, фонарь
+  const ded = await createRoom(scene, physics, {
+    tilesW: 3, tilesD: 2,
+    furniture: [
+      { file: 'bed_decorated.gltf.glb', x: -4.5, z: -2.6, rotY: Math.PI / 2, collider: true },
+      { file: 'table_medium_decorated_A.gltf.glb', x: 3.8, z: -2.7, collider: true },
+      { file: 'chair.gltf.glb', x: 2.4, z: -2.5, rotY: 1.2 },
+      { file: 'shelf_large.gltf.glb', x: 0, z: -3.55, collider: true },
+      { file: 'shelf_small_candles.gltf.glb', x: 5.55, z: 0, rotY: -Math.PI / 2 },
+      { file: 'barrel_small.gltf.glb', x: -5.2, z: 3 },
+      { file: 'crates_stacked.gltf.glb', x: 5, z: 2.9, rotY: 0.4, collider: true },
+      { file: 'stool.gltf.glb', x: -1.3, z: 0.6, rotY: 0.8 },
+      { file: 'candle_triple.gltf.glb', x: 3.8, z: -2.7, y: 1.05 },
+      { file: 'candle_lit.gltf.glb', x: 0.1, z: -3.5, y: 1.55 },
+    ],
+    lights: [
+      { x: 3.8, z: -2.4, intensity: 1.5 },
+      { x: 0, z: 0, intensity: 0.9, color: 0xffc887 },
+    ],
+  });
+  // сюжетные объекты
+  ded.radio = await ded.put('box.glb', 3.4, -2.4, { y: 1.05, scale: 0.45, pack: 'survival' });
+  ded.lantern = await ded.put('lantern.glb', -2.9, -3.1, { scale: 0.32, pack: 'town' });
+  ded.tin = await ded.put('chest.glb', 0.5, -3.4, { y: 1.05, scale: 0.4, pack: 'pirate' });
+  rooms.dedHouse = ded;
+
+  // Дом соседей (Михалыча): простой жилой
+  const homeA = await createRoom(scene, physics, {
+    tilesW: 3, tilesD: 2,
+    furniture: [
+      { file: 'bed_decorated.gltf.glb', x: 4.5, z: -2.6, rotY: -Math.PI / 2, collider: true },
+      { file: 'table_medium_decorated_A.gltf.glb', x: -3.8, z: -2.5, collider: true },
+      { file: 'stool.gltf.glb', x: -2.5, z: -1.6, rotY: 2.2 },
+      { file: 'shelf_small_candles.gltf.glb', x: 0, z: -3.55 },
+      { file: 'barrel_small.gltf.glb', x: -5.2, z: 2.8 },
+      { file: 'candle_lit.gltf.glb', x: -3.8, z: -2.5, y: 1.05 },
+    ],
+    lights: [{ x: -3.5, z: -2, intensity: 1.2 }],
+  });
+  rooms.homeA = homeA;
+
+  // Таверна: большая, длинные столы
+  const tavern = await createRoom(scene, physics, {
+    tilesW: 4, tilesD: 3,
+    furniture: [
+      { file: 'table_long_tablecloth_decorated_A.gltf.glb', x: -3, z: -2, collider: true },
+      { file: 'table_long.gltf.glb', x: 3, z: -2, collider: true },
+      { file: 'table_medium_tablecloth.gltf.glb', x: -3.5, z: 3, collider: true },
+      { file: 'chair.gltf.glb', x: -3, z: -0.6, rotY: Math.PI },
+      { file: 'chair.gltf.glb', x: -4.2, z: -3.4, rotY: 0 },
+      { file: 'stool.gltf.glb', x: 3, z: -0.7 },
+      { file: 'stool.gltf.glb', x: 4.2, z: -3.2 },
+      { file: 'barrel_small.gltf.glb', x: 6.8, z: -4.5 },
+      { file: 'crates_stacked.gltf.glb', x: -6.8, z: -4.4, rotY: 0.3, collider: true },
+      { file: 'candle_triple.gltf.glb', x: -3, z: -2, y: 1.05 },
+      { file: 'candle_lit.gltf.glb', x: 3, z: -2, y: 1.05 },
+    ],
+    lights: [
+      { x: -3, z: -2, intensity: 1.4 },
+      { x: 3.5, z: 1.5, intensity: 1.1 },
+    ],
+  });
+  rooms.tavern = tavern;
+
+  // Рынок: склад — ящики, бочки, прилавок
+  const market = await createRoom(scene, physics, {
+    tilesW: 3, tilesD: 2,
+    furniture: [
+      { file: 'crates_stacked.gltf.glb', x: -4.6, z: -2.8, collider: true },
+      { file: 'crates_stacked.gltf.glb', x: -2.8, z: -3.1, rotY: 1.1, collider: true },
+      { file: 'barrel_small.gltf.glb', x: 4.8, z: -3 },
+      { file: 'barrel_small.gltf.glb', x: 5.4, z: -1.9 },
+      { file: 'table_medium.gltf.glb', x: 1, z: -2.8, collider: true },
+      { file: 'fish-large.glb', x: 1, z: -2.6, y: 1.1, scale: 0.5, pack: 'survival' },
+      { file: 'box-open.glb', x: 3.2, z: 2.6, pack: 'survival' },
+      { file: 'candle_lit.gltf.glb', x: 1, z: -2.9, y: 1.05 },
+    ],
+    lights: [{ x: 0, z: -1, intensity: 1.1 }],
+  });
+  rooms.market = market;
+
+  // Мельница: мешки-ящики, жернова-бочки
+  const windmill = await createRoom(scene, physics, {
+    tilesW: 2, tilesD: 2,
+    furniture: [
+      { file: 'barrel_small.gltf.glb', x: -2.6, z: -2.6 },
+      { file: 'barrel_small.gltf.glb', x: -1.7, z: -3 },
+      { file: 'crates_stacked.gltf.glb', x: 2.6, z: -2.7, rotY: 0.6, collider: true },
+      { file: 'resource-planks.glb', x: 2.6, z: 2.4, pack: 'survival' },
+      { file: 'candle_lit.gltf.glb', x: 0, z: -3.3, y: 0.1 },
+    ],
+    lights: [{ x: 0, z: 0, intensity: 1.0 }],
+  });
+  rooms.windmill = windmill;
+
+  return rooms;
 }

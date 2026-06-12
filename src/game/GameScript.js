@@ -30,11 +30,23 @@ export class GameScript {
 
     // ---------- интро ----------
     if (!loadedSave) {
-      this._showStill('intro', 6500);
-      setTimeout(() => D.say('intro'), 1800);
+      // картинка предзагружена в main.js — ставим мгновенно, без зазора с игрой
+      e.hud.showCutsceneImage('/assets/textures/cutscenes/intro.jpg', true);
+      setTimeout(() => e.hud.hideCutsceneImage(), 7000);
+      setTimeout(() => D.say('intro'), 1500);
     }
     objective();
     audio.playMusic(save.hasFlag('finale_started') ? 'theme_storm' : 'theme_calm', 0.22);
+
+    // загрузка сейва посреди финала: вернуть шторм и интерактив линзы
+    if (save.hasFlag('finale_started') && !save.hasFlag('finale_done')) {
+      e.setStorm(true);
+      e.hud.setObjective('Установить линзу в фонарь');
+      I.add({
+        id: 'lensMount', object: e.lampCore, prompt: 'Установить линзу',
+        onInteract: () => this._assembleLens(),
+      });
+    }
 
     // ---------- эмбиент ----------
     audio.addPositional('waves_loop', a.positions.dock, { refDist: 8, maxDist: 90, volume: 0.7 });
@@ -94,37 +106,41 @@ export class GameScript {
       });
     }
 
-    // ---------- дом деда: вход и выход ----------
-    const enterHouse = async () => {
-      e.hud.fade(true);
-      await wait(900);
-      audio.playSfx('door_open', 0.7);
-      const p = a.positions.interiorEntry;
-      e.player.teleport({ x: p.x, y: p.y + 0.2, z: p.z });
-      e.tpCamera.yaw = Math.PI; // камера от двери вглубь комнаты
-      e.hud.fade(false);
-      D.say('house_ded');
-    };
-    const exitHouse = async () => {
-      e.hud.fade(true);
-      await wait(900);
-      audio.playSfx('door_open', 0.7);
-      const p = a.positions.dedHouseDoor;
-      e.player.teleport({ x: p.x, y: p.y + 1.1, z: p.z });
-      e.tpCamera.yaw = Math.PI;
-      e.hud.fade(false);
-    };
-    I.add({ id: 'dedDoor', object: a.interactables.dedDoor, prompt: 'Войти в дом деда', once: false, onInteract: enterHouse });
-    I.add({ id: 'interiorExit', object: a.interactables.interiorExit, prompt: 'Выйти на улицу', once: false, onInteract: exitHouse });
-
-    // запертые дома соседей
-    for (const [id, obj] of [['homeA', a.interactables.homeA], ['tavern', a.interactables.tavern], ['market', a.interactables.market]]) {
-      if (!obj) continue;
+    // ---------- здания: входы и выходы ----------
+    const wireBuilding = (id, room, label, onEnterOnce = null) => {
       I.add({
-        id: `locked_${id}`, object: obj, prompt: 'Дверь', once: false,
-        onInteract: () => { audio.playSfx('door_locked', 0.7); D.say('locked_door', { once: false }); },
+        id: `enter_${id}`, object: a.doors[id].marker, prompt: label, once: false,
+        onInteract: async () => {
+          e.character.playOnce('interact'); // открывает дверь
+          await wait(500);
+          e.hud.fade(true);
+          await wait(900);
+          audio.playSfx('door_open', 0.7);
+          const p = room.entryPoint;
+          e.player.teleport({ x: p.x, y: p.y + 0.2, z: p.z });
+          e.player.facing = Math.PI; // лицом вглубь комнаты
+          e.tpCamera.yaw = Math.PI;
+          e.hud.fade(false);
+          onEnterOnce?.();
+        },
       });
-    }
+      I.add({
+        id: `exit_${id}`, object: room.doorInside, prompt: 'Выйти на улицу', once: false,
+        onInteract: async () => {
+          e.hud.fade(true);
+          await wait(900);
+          audio.playSfx('door_open', 0.7);
+          const p = a.doors[id].outside;
+          e.player.teleport({ x: p.x, y: p.y + 1.1, z: p.z });
+          e.hud.fade(false);
+        },
+      });
+    };
+    wireBuilding('dedHouse', e.interiors.dedHouse, 'Войти в дом деда', () => D.say('house_ded'));
+    wireBuilding('homeA', e.interiors.homeA, 'Войти в дом');
+    wireBuilding('tavern', e.interiors.tavern, 'Войти в таверну');
+    wireBuilding('market', e.interiors.market, 'Войти на склад');
+    wireBuilding('windmill', e.interiors.windmill, 'Войти в мельницу');
     I.add({
       id: 'oldLantern', object: a.interactables.oldLantern, prompt: 'Дедушкин фонарь',
       onInteract: () => {
@@ -245,7 +261,7 @@ export class GameScript {
     img.src = url;
   }
 
-  // Финал: подъём (фейд) → галерея → сборка → свет → корабль.
+  // Финал, часть 1: подъём (фейд) → галерея в шторм. Линзу устанавливает игрок.
   async beginFinale() {
     const { e } = this;
     if (e.saveSystem.hasFlag('finale_started')) return;
@@ -264,17 +280,32 @@ export class GameScript {
     e.player.teleport({ x: top.x, y: top.y + 1.2, z: top.z });
     e.tpCamera.yaw = 2.4; e.tpCamera.pitch = 0.15;
 
-    // шторм
     e.setStorm(true);
     await wait(900);
     e.hud.fade(false);
     e.dialogue.say('climb_mid');
-    await wait(5200);
+    e.hud.setObjective('Установить линзу в фонарь');
 
+    // установка линзы — отдельное действие игрока
+    e.interaction.add({
+      id: 'lensMount', object: e.lampCore, prompt: 'Установить линзу',
+      onInteract: () => this._assembleLens(),
+    });
+  }
+
+  // Финал, часть 2: сборка линзы (анимация) → свет → корабль → эпилог с титрами.
+  async _assembleLens() {
+    const { e } = this;
+    e.hud.setObjective('');
+    e.character.playOnce('interact');
     e.dialogue.say('final_assembly');
-    await wait(6200);
+    await wait(3500);
+    // лампа сперва теплится — линза встала на место
+    e.lampCore.material.emissive.set(0x664d2a);
+    e.lampCore.material.emissiveIntensity = 1.2;
+    e.audio.playSfx('pickup', 0.8);
+    await wait(2800);
 
-    // зажигание
     e.audio.playSfx('lamp_ignite', 1);
     e.dialogue.say('final_light');
     await wait(1800);
@@ -288,11 +319,19 @@ export class GameScript {
     await wait(3000);
     e.dialogue.say('final_marta');
     await wait(7000);
-    this._showStill('ending', 9000);
     e.dialogue.say('final_eli');
     this.e.saveSystem.setFlag('finale_done');
     this.refreshObjective();
     e.requestSave();
+    await wait(9000);
+
+    // эпилог: иллюстрация + экран «Конец»
+    e.hud.fade(true);
+    await wait(1500);
+    e.hud.showCutsceneImage('/assets/textures/cutscenes/ending.jpg', true);
+    e.hud.fade(false);
+    await wait(6000);
+    e.hud.showEndScreen();
   }
 }
 

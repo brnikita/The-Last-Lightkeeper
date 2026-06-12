@@ -8,10 +8,12 @@ export class Input {
     this.pointerLocked = false;
     this.interactPressed = false; // E, сбрасывается после чтения
 
+    this.jumpPressed = false;
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       this.keys.add(e.code);
       if (e.code === 'KeyE') this.interactPressed = true;
+      if (e.code === 'Space') { this.jumpPressed = true; e.preventDefault(); }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
@@ -45,6 +47,12 @@ export class Input {
   consumeInteract() {
     const v = this.interactPressed;
     this.interactPressed = false;
+    return v;
+  }
+
+  consumeJump() {
+    const v = this.jumpPressed;
+    this.jumpPressed = false;
     return v;
   }
 }

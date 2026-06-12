@@ -45,6 +45,14 @@ export class CharacterController {
     this.position = new THREE.Vector3().copy(spawnPosition);
   }
 
+  jump() {
+    if (this.grounded && !this.swimming) {
+      this.verticalVelocity = 5.4; // высота прыжка ~1.5 м
+      this.grounded = false;
+      this.jumping = true;
+    }
+  }
+
   // moveInput: {x, z} в мировых координатах (уже повёрнут по yaw камеры), run: bool
   update(dt, moveInput, run) {
     // в глубокой воде — плывём: дно не достать, держимся у поверхности
@@ -73,7 +81,13 @@ export class CharacterController {
     if (this.swimming) {
       // плавучесть: мягко подтягиваемся к поверхности, гравитация выключена
       this.verticalVelocity = 0;
+      this.jumping = false;
       dy = (SWIM_CENTER_Y - this.position.y) * Math.min(1, 6 * dt);
+    } else if (this.jumping) {
+      // в прыжке не прижимаемся к земле, пока не приземлимся
+      this.verticalVelocity += GRAVITY * dt;
+      if (this.grounded && this.verticalVelocity <= 0) this.jumping = false;
+      dy = this.verticalVelocity * dt;
     } else {
       this.verticalVelocity = this.grounded ? -0.5 : this.verticalVelocity + GRAVITY * dt;
       dy = this.verticalVelocity * dt;
