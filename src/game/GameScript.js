@@ -29,6 +29,7 @@ export class GameScript {
 
     // ---------- интро ----------
     if (!loadedSave) {
+      this._showStill('intro', 6500);
       setTimeout(() => D.say('intro'), 1800);
     }
     objective();
@@ -176,6 +177,17 @@ export class GameScript {
     }
   }
 
+  // Показ иллюстрации катсцены, если файл существует.
+  _showStill(name, ms) {
+    const url = `/assets/textures/cutscenes/${name}.jpg`;
+    const img = new Image();
+    img.onload = () => {
+      this.e.hud.showCutsceneImage(url);
+      setTimeout(() => this.e.hud.hideCutsceneImage(), ms);
+    };
+    img.src = url;
+  }
+
   // Финал: подъём (фейд) → галерея → сборка → свет → корабль.
   async beginFinale() {
     const { e } = this;
@@ -186,6 +198,7 @@ export class GameScript {
     e.hud.fade(true);
     e.audio.playMusic('theme_storm', 0.26);
     e.audio.playSfx('stairs_metal', 0.8);
+    this._showStill('storm', 5200);
     await wait(1600);
     e.audio.playSfx('stairs_metal', 0.6);
 
@@ -217,6 +230,7 @@ export class GameScript {
     await wait(3000);
     e.dialogue.say('final_marta');
     await wait(7000);
+    this._showStill('ending', 9000);
     e.dialogue.say('final_eli');
     this.e.saveSystem.setFlag('finale_done');
     this.refreshObjective();

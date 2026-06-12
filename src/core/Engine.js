@@ -18,6 +18,7 @@ import { SaveSystem } from '../systems/SaveSystem.js';
 import { Interaction } from '../systems/Interaction.js';
 import { HUD } from '../ui/HUD.js';
 import { GameScript } from '../game/GameScript.js';
+import { isTouchDevice, TouchControls } from '../systems/TouchControls.js';
 
 export class Engine {
   async init(container, onProgress = () => {}) {
@@ -61,8 +62,15 @@ export class Engine {
     await this.character.load(this.scene);
 
     onProgress(0.9, 'Свет и пост-обработка…');
-    this.postfx = createPostFX(this.renderer, this.scene, this.camera);
+    this.mobile = isTouchDevice();
+    if (this.mobile) {
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      this.renderer.shadowMap.enabled = false;
+      this.touch = new TouchControls(this.input, this.hud);
+    }
+    this.postfx = this.mobile ? null : createPostFX(this.renderer, this.scene, this.camera);
     this._initRain();
+    this._initLeaves();
 
     // сейв
     const saved = this.saveSystem.load();
@@ -241,6 +249,42 @@ export class Engine {
     this.audio.addPositional('lighthouse_hum', this.lampCore.position, { refDist: 6, maxDist: 60, volume: 0.6 });
   }
 
+  _initLeaves() {
+    const N = 220;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(N * 3);
+    const phase = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 60;
+      pos[i * 3 + 1] = 0.5 + Math.random() * 7;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 60;
+      phase[i] = Math.random() * Math.PI * 2;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this._leafPhase = phase;
+    const mat = new THREE.PointsMaterial({
+      color: 0xc9a96a, size: 0.09, transparent: true, opacity: 0.7, sizeAttenuation: true,
+    });
+    this.leaves = new THREE.Points(geo, mat);
+    this.leaves.frustumCulled = false;
+    this.scene.add(this.leaves);
+  }
+
+  _updateLeaves(dt) {
+    const rp = this.leaves.geometry.attributes.position;
+    const t = this._time;
+    for (let i = 0; i < rp.count; i++) {
+      const ph = this._leafPhase[i];
+      let x = rp.getX(i) + (0.55 + 0.3 * Math.sin(t * 0.7 + ph)) * dt; // ветер на восток
+      let y = rp.getY(i) + Math.sin(t * 1.3 + ph) * dt * 0.35;
+      if (x > 30) x = -30;
+      if (y < 0.3) y = 6; if (y > 8) y = 0.5;
+      rp.setX(i, x); rp.setY(i, y);
+    }
+    rp.needsUpdate = true;
+    this.leaves.position.set(this.player.position.x, 0, this.player.position.z);
+  }
+
   _initRain() {
     const N = 1600;
     const geo = new THREE.BufferGeometry();
@@ -271,6 +315,10 @@ export class Engine {
       if (i.back) fz += 1;
       if (i.left) fx -= 1;
       if (i.right) fx += 1;
+      if (this.touch && (this.touch.moveX || this.touch.moveZ)) {
+        fx = this.touch.moveX;
+        fz = this.touch.moveZ;
+      }
     }
     const yaw = this.tpCamera.yaw;
     this._moveInput.x = fx * Math.cos(yaw) + fz * Math.sin(yaw);
@@ -318,6 +366,8 @@ export class Engine {
       t.set(lp.x - Math.cos(a) * 80, lp.y - 7, lp.z + Math.sin(a) * 80);
     }
 
+    this._updateLeaves(dt);
+
     // дождь следует за игроком
     if (this.rain.visible) {
       const rp = this.rain.geometry.attributes.position;
@@ -338,7 +388,8 @@ export class Engine {
       this.saveSystem.save(this);
     }
 
-    this.postfx.render(dt);
+    if (this.postfx) this.postfx.render(dt);
+    else this.renderer.render(this.scene, this.camera);
     if (this.stats) this.stats.end();
   }
 
@@ -349,6 +400,6 @@ export class Engine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
-    this.postfx.setSize(w, h);
+    this.postfx?.setSize(w, h);
   }
 }

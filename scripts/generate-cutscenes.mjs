@@ -65,9 +65,12 @@ async function dataToBuf(d) {
   throw new Error('в ответе нет ни b64_json, ни url');
 }
 
+// Цепочка моделей: первые, что доступны ключу, дальше — классические фоллбэки
+const MODELS = ['gpt-image-2', 'chatgpt-image-latest', 'gpt-image-1', 'gpt-image-1-mini'];
+
 async function generate(id, prompt) {
-  // Попытки 1–2: gpt-image-1 / gpt-image-1-mini — умеют сразу отдавать JPEG нужного качества
-  for (const model of ['gpt-image-1', 'gpt-image-1-mini']) {
+  let lastErr;
+  for (const model of MODELS) {
     try {
       const json = await callImages({
         model,
@@ -80,18 +83,11 @@ async function generate(id, prompt) {
       });
       return { buf: await dataToBuf(json.data[0]), model };
     } catch (e) {
+      lastErr = e;
       console.log(`  ${model} не сработал (${e.message.slice(0, 120)}), пробую дальше…`);
     }
   }
-  // Попытка 3: dall-e-3 (вернёт PNG — сохраняем как PNG, конвертация в JPEG отдельно)
-  const json = await callImages({
-    model: 'dall-e-3',
-    prompt: `${STYLE} Scene: ${prompt}`,
-    size: '1792x1024',
-    quality: 'hd',
-    n: 1,
-  });
-  return { buf: await dataToBuf(json.data[0]), model: 'dall-e-3', isPng: true };
+  throw lastErr;
 }
 
 let ok = 0, skip = 0, fail = 0;
