@@ -44,12 +44,14 @@ export class GameScript {
     windId.play();
 
     // ---------- зоны ----------
-    I.addZone({ id: 'village', pos: new THREE.Vector3(-5, 3, 18), radius: 16, onEnter: () => D.say('village_entry') });
-    I.addZone({ id: 'forest', pos: a.positions.forestEntry, radius: 10, onEnter: () => D.say('forest_entry') });
-    I.addZone({ id: 'cove', pos: a.positions.coveEntry, radius: 10, onEnter: () => D.say('cove_entry') });
+    // зоны повторяемы: реплика звучит снова, только если игрок ушёл и вернулся
+    // (защита от спама — кулдаун в Dialogue.say)
+    I.addZone({ id: 'village', pos: new THREE.Vector3(-5, 3, 18), radius: 16, once: false, onEnter: () => D.say('village_entry', { once: false }) });
+    I.addZone({ id: 'forest', pos: a.positions.forestEntry, radius: 10, once: false, onEnter: () => D.say('forest_entry', { once: false }) });
+    I.addZone({ id: 'cove', pos: a.positions.coveEntry, radius: 10, once: false, onEnter: () => D.say('cove_entry', { once: false }) });
     I.addZone({
-      id: 'lighthouse_base', pos: a.positions.lighthouse, radius: 14,
-      onEnter: () => { if (!save.hasFlag('lighthouse_open')) D.say('lighthouse_locked', { once: true }); },
+      id: 'lighthouse_base', pos: a.positions.lighthouse, radius: 14, once: false,
+      onEnter: () => { if (!save.hasFlag('lighthouse_open')) D.say('lighthouse_locked', { once: false }); },
     });
 
     // ---------- интерактивы: записки ----------
@@ -92,8 +94,37 @@ export class GameScript {
       });
     }
 
-    // ---------- дом деда ----------
-    I.addZone({ id: 'ded_house', pos: a.positions.dedHouseDoor, radius: 6, onEnter: () => D.say('house_ded') });
+    // ---------- дом деда: вход и выход ----------
+    const enterHouse = async () => {
+      e.hud.fade(true);
+      await wait(900);
+      audio.playSfx('door_open', 0.7);
+      const p = a.positions.interiorEntry;
+      e.player.teleport({ x: p.x, y: p.y + 0.2, z: p.z });
+      e.tpCamera.yaw = Math.PI; // камера от двери вглубь комнаты
+      e.hud.fade(false);
+      D.say('house_ded');
+    };
+    const exitHouse = async () => {
+      e.hud.fade(true);
+      await wait(900);
+      audio.playSfx('door_open', 0.7);
+      const p = a.positions.dedHouseDoor;
+      e.player.teleport({ x: p.x, y: p.y + 1.1, z: p.z });
+      e.tpCamera.yaw = Math.PI;
+      e.hud.fade(false);
+    };
+    I.add({ id: 'dedDoor', object: a.interactables.dedDoor, prompt: 'Войти в дом деда', once: false, onInteract: enterHouse });
+    I.add({ id: 'interiorExit', object: a.interactables.interiorExit, prompt: 'Выйти на улицу', once: false, onInteract: exitHouse });
+
+    // запертые дома соседей
+    for (const [id, obj] of [['homeA', a.interactables.homeA], ['tavern', a.interactables.tavern], ['market', a.interactables.market]]) {
+      if (!obj) continue;
+      I.add({
+        id: `locked_${id}`, object: obj, prompt: 'Дверь', once: false,
+        onInteract: () => { audio.playSfx('door_locked', 0.7); D.say('locked_door', { once: false }); },
+      });
+    }
     I.add({
       id: 'oldLantern', object: a.interactables.oldLantern, prompt: 'Дедушкин фонарь',
       onInteract: () => {
@@ -127,7 +158,6 @@ export class GameScript {
     });
     I.add({
       id: 'teaTin', object: a.interactables.teaTin, prompt: 'Жестянка из-под чая',
-      condition: () => save.hasFlag('radio_fixed') || this.e.dialogue.seen.has('lighthouse_locked'),
       onInteract: () => {
         audio.playSfx('key_unlock', 0.7);
         inv.add('lighthouse_key');

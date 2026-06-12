@@ -106,13 +106,20 @@ export class Character {
     this.current = next;
   }
 
-  update(dt, feetPosition, facing, speed, moving) {
+  update(dt, feetPosition, facing, speed, moving, swimming = false) {
     this.root.position.copy(feetPosition);
     this.root.rotation.y = facing;
     if (this.mixer) {
-      if (!moving) this.play('idle');
-      else if (speed > 3.5) this.play('run');
-      else this.play('walk');
+      if (swimming) {
+        // в воде — медленное «барахтанье» на walk-клипе, тело по грудь в воде
+        this.play(moving ? 'walk' : 'idle');
+        if (this.actions.walk) this.actions.walk.timeScale = 0.55;
+      } else {
+        if (this.actions.walk) this.actions.walk.timeScale = 1;
+        if (!moving) this.play('idle');
+        else if (speed > 3.5) this.play('run');
+        else this.play('walk');
+      }
       this.mixer.update(dt);
     }
   }

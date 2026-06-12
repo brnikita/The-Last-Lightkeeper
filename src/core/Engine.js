@@ -39,6 +39,14 @@ export class Engine {
     onProgress(0.5, 'Деревня и пристань…');
     this.anchors = await createIsland(this.scene, this.physics, this.terrain);
 
+    const { createDedHouseInterior } = await import('../world/Interior.js');
+    this.interior = await createDedHouseInterior(this.scene, this.physics);
+    this.anchors.interactables.radio = this.interior.radio;
+    this.anchors.interactables.oldLantern = this.interior.lantern;
+    this.anchors.interactables.teaTin = this.interior.tin;
+    this.anchors.interactables.interiorExit = this.interior.doorInside;
+    this.anchors.positions.interiorEntry = this.interior.entryPoint;
+
     onProgress(0.7, 'Маяк…');
     await this._buildLighthouse();
 
@@ -54,6 +62,7 @@ export class Engine {
     const spawn = this.anchors.positions.spawn;
     this.player = new CharacterController(this.physics.RAPIER, this.physics.world,
       new THREE.Vector3(spawn.x, spawn.y + 1.2, spawn.z));
+    this.player.groundHeightFn = this.terrain.height;
     this.tpCamera = new ThirdPersonCamera(this.camera, this.physics);
     this.tpCamera.yaw = 0; // камера с моря, Эли лицом к острову
     this.player.facing = Math.PI;
@@ -347,7 +356,7 @@ export class Engine {
     if (!this.hud.modalOpen) this.tpCamera.applyMouse(m.x, m.y);
 
     this.player.getFeetPosition(this._feet);
-    this.character.update(dt, this._feet, this.player.facing, this.player.speed, this.player.moving);
+    this.character.update(dt, this._feet, this.player.facing, this.player.speed, this.player.moving, this.player.swimming);
     this.tpCamera.update(dt, this._feet, this.player.collider);
     // вблизи прячем модель, чтобы камера не оказывалась внутри головы
     this.character.root.visible = this.tpCamera.currentDistance > 1.05;

@@ -2,10 +2,13 @@ import * as THREE from 'three';
 
 const WALK_SPEED = 2.5;   // м/с
 const RUN_SPEED = 5.0;
+const SWIM_SPEED = 1.7;
 const CAPSULE_HALF_HEIGHT = 0.55; // цилиндрическая часть
 const CAPSULE_RADIUS = 0.35;
 const GRAVITY = -9.81;
 const TURN_LERP = 12; // скорость поворота модели к направлению движения
+const SWIM_DEPTH = -0.95;     // глубина дна, при которой начинаем плыть
+const SWIM_CENTER_Y = 0.32;   // центр капсулы на плаву (по грудь в воде)
 
 // Кинематический контроллер на Rapier: позицию двигает контроллер, не анимация.
 export class CharacterController {
@@ -31,6 +34,8 @@ export class CharacterController {
 
     this.verticalVelocity = 0;
     this.grounded = false;
+    this.swimming = false;
+    this.groundHeightFn = null; // (x, z) -> высота терена; задаёт Engine
 
     // Куда смотрит модель персонажа (yaw, рад) и фактическая скорость для анимаций
     this.facing = 0;
@@ -42,7 +47,13 @@ export class CharacterController {
 
   // moveInput: {x, z} в мировых координатах (уже повёрнут по yaw камеры), run: bool
   update(dt, moveInput, run) {
-    const speed = run ? RUN_SPEED : WALK_SPEED;
+    // в глубокой воде — плывём: дно не достать, держимся у поверхности
+    const groundH = this.groundHeightFn
+      ? this.groundHeightFn(this.position.x, this.position.z)
+      : -100;
+    this.swimming = groundH < SWIM_DEPTH && this.position.y < SWIM_CENTER_Y + 0.5;
+
+    const speed = this.swimming ? SWIM_SPEED : run ? RUN_SPEED : WALK_SPEED;
     const len = Math.hypot(moveInput.x, moveInput.z);
     this.moving = len > 0.01;
 
@@ -58,8 +69,15 @@ export class CharacterController {
     }
     this.speed = this.moving ? speed : 0;
 
-    this.verticalVelocity = this.grounded ? -0.5 : this.verticalVelocity + GRAVITY * dt;
-    const dy = this.verticalVelocity * dt;
+    let dy;
+    if (this.swimming) {
+      // плавучесть: мягко подтягиваемся к поверхности, гравитация выключена
+      this.verticalVelocity = 0;
+      dy = (SWIM_CENTER_Y - this.position.y) * Math.min(1, 6 * dt);
+    } else {
+      this.verticalVelocity = this.grounded ? -0.5 : this.verticalVelocity + GRAVITY * dt;
+      dy = this.verticalVelocity * dt;
+    }
 
     this.controller.computeColliderMovement(this.collider, { x: dx, y: dy, z: dz });
     this.grounded = this.controller.computedGrounded();

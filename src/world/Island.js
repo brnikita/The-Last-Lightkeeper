@@ -57,11 +57,39 @@ export async function createIsland(scene, physics, terrain) {
   }
 
   // ---------- ПРИСТАНЬ (юг, x≈-12 z≈42) ----------
-  const dockBase = { x: -12, z: 36 };
-  // настил от берега в море
+  const dockBase = { x: -12, z: 31 }; // берег здесь ~1.3 м, дальше уходит в воду
+  // настил от берега в море; коллайдер — только палуба (под доком можно проплыть)
+  let deckY = 0;
   for (let i = 0; i < 4; i++) {
-    await place(`${ENV}/pirate/structure-platform-dock.glb`, dockBase.x, dockBase.z + 4 + i * 2.45,
-      { onWater: true, yOff: 0.4, collider: i === 0 ? 'box' : 'box' });
+    const p = await place(`${ENV}/pirate/structure-platform-dock.glb`, dockBase.x, dockBase.z + 4 + i * 2.45,
+      { onWater: true, yOff: 0.4, collider: 'none' });
+    if (i === 0) deckY = new THREE.Box3().setFromObject(p).max.y;
+  }
+  world.createCollider(
+    RAPIER.ColliderDesc.cuboid(1.3, 0.18, (4 * 2.45) / 2 + 0.2)
+      .setTranslation(dockBase.x, deckY - 0.18, dockBase.z + 4 + (3 * 2.45) / 2)
+  );
+  // трап: наклонный настил с берега на палубу, с перекрытием настила,
+  // иначе с песка на причал не подняться (autostep не хватает)
+  {
+    const shoreZ = dockBase.z + 0.6;
+    const shoreY = H(dockBase.x, shoreZ);
+    const deckZ = dockBase.z + 4 - 0.4; // заходим НА палубу с запасом
+    const len = Math.hypot(deckZ - shoreZ, deckY - shoreY) + 0.8;
+    const angle = Math.atan2(deckY - shoreY, deckZ - shoreZ);
+    const midY = (shoreY + deckY) / 2;
+    const midZ = (shoreZ + deckZ) / 2;
+    const planks = await instantiate(`${ENV}/pirate/platform-planks.glb`);
+    planks.position.set(dockBase.x, midY - 0.1, midZ);
+    planks.rotation.x = angle;
+    planks.scale.set(1.1, 1, len / 2.5);
+    scene.add(planks);
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(angle, 0, 0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(1.4, 0.08, len / 2)
+        .setTranslation(dockBase.x, midY + 0.04, midZ)
+        .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
+    );
   }
   await place(`${ENV}/pirate/structure-platform-dock-small.glb`, dockBase.x + 2.5, dockBase.z + 9, { onWater: true, yOff: 0.4 });
   const playerBoat = await place(`${ENV}/pirate/boat-row-small.glb`, dockBase.x - 2.6, dockBase.z + 11.5,
@@ -70,7 +98,7 @@ export async function createIsland(scene, physics, terrain) {
   await place(`${ENV}/pirate/crate.glb`, dockBase.x - 1, dockBase.z + 7.5, { onWater: true, yOff: 0.82, collider: 'none' });
   const noticeBoard = await place(`${ENV}/survival/signpost.glb`, dockBase.x + 2, dockBase.z + 1.5, { rotY: Math.PI, avoidR: 2 });
   anchors.interactables.noticeBoard = noticeBoard;
-  anchors.positions.spawn = new THREE.Vector3(dockBase.x, H(dockBase.x, dockBase.z) + 1.2, dockBase.z + 6);
+  anchors.positions.spawn = new THREE.Vector3(dockBase.x, deckY + 1.1, dockBase.z + 6);
   anchors.positions.dock = new THREE.Vector3(dockBase.x, 1, dockBase.z + 6);
 
   // лебёдка/кран у пристани (столб с перекладиной)
@@ -79,20 +107,29 @@ export async function createIsland(scene, physics, terrain) {
 
   // фрагмент 1 — на дальнем конце пристани
   const lens1 = makeLensFragment();
-  lens1.position.set(dockBase.x + 2.5, 0.85, dockBase.z + 9);
+  lens1.position.set(dockBase.x, deckY + 0.1, dockBase.z + 11.5);
   scene.add(lens1);
   anchors.interactables.lens_1 = lens1;
 
   // ---------- ДЕРЕВНЯ (центр-юг) ----------
-  const V = 4.6; // масштаб KayKit-домов
-  await place(`${ENV}/village/building_home_A_red.gltf`, -24, 22, { rotY: 0.9, scale: V, avoidR: 7 });
-  const dedHouse = await place(`${ENV}/village/building_home_B_red.gltf`, 9, 13, { rotY: -2.2, scale: V, avoidR: 7 });
+  // Дома в человеческом масштабе: конёк ~7 м, дверь выше персонажа
+  const V = 7.2;
+  const homeA = await place(`${ENV}/village/building_home_A_red.gltf`, -25, 23, { rotY: 0.9, scale: V, avoidR: 9 });
+  const dedHouse = await place(`${ENV}/village/building_home_B_red.gltf`, 10, 12, { rotY: -2.2, scale: V, avoidR: 9 });
   anchors.interactables.dedHouse = dedHouse;
-  anchors.positions.dedHouseDoor = new THREE.Vector3(6.5, H(6.5, 16) , 16);
-  await place(`${ENV}/village/building_tavern_red.gltf`, -14, 10, { rotY: 1.7, scale: V, avoidR: 9 });
-  await place(`${ENV}/village/building_market_red.gltf`, -2, 24, { rotY: Math.PI, scale: V, avoidR: 7 });
-  const well = await place(`${ENV}/village/building_well_red.gltf`, -6, 14, { scale: V, avoidR: 4 });
-  await place(`${ENV}/village/building_windmill_red.gltf`, -34, -16, { rotY: 0.6, scale: V * 1.15, avoidR: 9 });
+  anchors.interactables.homeA = homeA;
+  anchors.positions.dedHouseDoor = new THREE.Vector3(6.2, H(6.2, 16.5), 16.5);
+  const tavern = await place(`${ENV}/village/building_tavern_red.gltf`, -16, 8, { rotY: 1.7, scale: V, avoidR: 11 });
+  anchors.interactables.tavern = tavern;
+  const market = await place(`${ENV}/village/building_market_red.gltf`, -2, 24, { rotY: Math.PI, scale: V, avoidR: 9 });
+  anchors.interactables.market = market;
+  const well = await place(`${ENV}/village/building_well_red.gltf`, -6, 14, { scale: 2.2, avoidR: 4 });
+  await place(`${ENV}/village/building_windmill_red.gltf`, -34, -16, { rotY: 0.6, scale: V * 1.1, avoidR: 11 });
+  // маркер двери дома деда («Войти»)
+  const dedDoorMarker = new THREE.Group();
+  dedDoorMarker.position.copy(anchors.positions.dedHouseDoor).add(new THREE.Vector3(0, 1, 0));
+  scene.add(dedDoorMarker);
+  anchors.interactables.dedDoor = dedDoorMarker;
 
   // рыбный рынок: прилавок, телега, бочки, рыба
   await place(`${ENV}/town/stall.glb`, -4, 30, { rotY: Math.PI, avoidR: 3 });
@@ -123,21 +160,12 @@ export async function createIsland(scene, physics, terrain) {
 
   // фрагмент 2 — у колодца
   const lens2 = makeLensFragment();
-  lens2.position.set(-6, H(-6, 14) + 0.3, 12.4);
+  lens2.position.set(-9.5, H(-9.5, 11) + 0.3, 11);
   scene.add(lens2);
   anchors.interactables.lens_2 = lens2;
   anchors.interactables.well = well;
 
-  // дом деда: фонарь, радио, жестянка — невидимые маркеры внутри/у дома
-  const lanternSpot = new THREE.Group();
-  lanternSpot.position.set(7.8, H(7.8, 14.5) + 0.8, 14.5);
-  scene.add(lanternSpot);
-  const oldLantern = await place(`${ENV}/town/lantern.glb`, 7.8, 14.8, { scale: 0.45, collider: 'none' });
-  anchors.interactables.oldLantern = oldLantern;
-  const radioSpot = await place(`${ENV}/survival/box.glb`, 10.5, 11.5, { scale: 0.8, collider: 'none' });
-  anchors.interactables.radio = radioSpot;
-  const tinSpot = await place(`${ENV}/pirate/chest.glb`, 9.8, 14.8, { scale: 0.7, collider: 'none' });
-  anchors.interactables.teaTin = tinSpot;
+  // фонарь, радио и жестянка с ключом теперь ВНУТРИ дома деда (см. Interior.js)
 
   // ---------- ЛЕС (восток) ----------
   anchors.positions.forestEntry = new THREE.Vector3(20, H(20, -2), -2);
